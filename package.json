@@ -1,0 +1,17 @@
+{
+  "name": "felt",
+  "version": "1.0.0",
+  "description": "A public lab exploring AI epistemic state through generative visuals",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "vite": "^8.1.0"
+  }
+}
