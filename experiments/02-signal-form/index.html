@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" style="background:#0a0a0a">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>felt — 02 Signal Form</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --panel-bg: #111111;
+      --border: #1e1e1e;
+      --text: #e0e0e0;
+      --muted: #555;
+      --accent: #c8f0d0;
+      --warn: #f0c8c8;
+      --mono: 'JetBrains Mono', 'Fira Mono', monospace;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      overflow: hidden;
+      color-scheme: dark;
+    }
+
+    canvas {
+      display: block;
+      position: fixed;
+      top: 0; left: 0;
+      background: var(--bg);
+    }
+
+    /* ─── Top bar ─── */
+    #topbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1.5rem 2rem;
+      pointer-events: none;
+    }
+
+    #topbar > * { pointer-events: auto; }
+
+    #back {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 0.4rem 0.75rem;
+      border: 1px solid var(--border);
+      background: rgba(10,10,10,0.8);
+      backdrop-filter: blur(8px);
+      transition: color 0.15s, border-color 0.15s;
+    }
+    #back:hover { color: var(--text); border-color: var(--muted); }
+
+    #label {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    /* ─── Prompt input ─── */
+    #prompt-area {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      z-index: 20;
+      padding: 1.5rem 2rem;
+      background: linear-gradient(to top, rgba(10,10,10,0.95) 40%, transparent);
+    }
+
+    #prompt-form {
+      display: flex;
+      gap: 0.75rem;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    #prompt-input {
+      flex: 1;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      color: var(--text);
+      background: rgba(17,17,17,0.9);
+      border: 1px solid var(--border);
+      padding: 0.75rem 1rem;
+      outline: none;
+      transition: border-color 0.15s;
+      backdrop-filter: blur(8px);
+    }
+    #prompt-input:focus { border-color: var(--muted); }
+    #prompt-input::placeholder { color: var(--muted); }
+    #prompt-input:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    #prompt-submit {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      background: rgba(17,17,17,0.9);
+      border: 1px solid var(--border);
+      padding: 0 1.5rem;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+      backdrop-filter: blur(8px);
+    }
+    #prompt-submit:hover { border-color: var(--accent); }
+    #prompt-submit:disabled { opacity: 0.3; cursor: not-allowed; border-color: var(--border); }
+
+    /* ─── Status readout ─── */
+    #status {
+      position: fixed;
+      bottom: 5rem;
+      left: 2rem;
+      z-index: 20;
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      line-height: 1.8;
+      pointer-events: none;
+    }
+
+    #status .val { color: var(--text); }
+    #status .accent { color: var(--accent); }
+    #status .warn { color: var(--warn); }
+
+    /* ─── Tweakpane ─── */
+    #ui {
+      position: fixed;
+      top: 1.5rem;
+      right: 1.5rem;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      align-items: flex-end;
+    }
+
+    #panel { }
+
+    .tp-dfwv {
+      width: 240px !important;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="topbar">
+    <a id="back" href="/">← felt</a>
+    <span id="label">02 — signal form</span>
+  </div>
+
+  <div id="ui">
+    <div id="panel"></div>
+  </div>
+
+  <div id="status">
+    <div>stage: <span class="val" id="s-stage">idle</span></div>
+    <div>tokens: <span class="val" id="s-tokens">0</span></div>
+    <div>sentiment: <span class="val" id="s-sentiment">—</span></div>
+    <div>hedging: <span class="val" id="s-hedging">—</span></div>
+    <div>stop: <span class="val" id="s-stop">—</span></div>
+  </div>
+
+  <div id="prompt-area">
+    <form id="prompt-form">
+      <input
+        id="prompt-input"
+        type="text"
+        placeholder="ask something..."
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button id="prompt-submit" type="submit">send</button>
+    </form>
+  </div>
+
+  <script type="module" src="./sketch.js"></script>
+</body>
+</html>

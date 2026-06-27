@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "p5": "^1.9.4",
+    "sentiment": "^5.0.2",
     "tweakpane": "^4.0.3"
   }
 }
