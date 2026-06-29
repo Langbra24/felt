@@ -9,14 +9,31 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
+      /* Base surfaces */
       --bg: #0a0a0a;
-      --panel-bg: #111111;
+      --surface: #111111;
+      --surface-2: #161616;
       --border: #1e1e1e;
+      --border-light: #2a2a2a;
+
+      /* Text */
       --text: #e0e0e0;
+      --text-secondary: #a0a0a0;
       --muted: #555;
+
+      /* Accents */
       --accent: #c8f0d0;
       --warn: #f0c8c8;
-      --mono: 'JetBrains Mono', 'Fira Mono', monospace;
+      --user-bubble: #1a1a1a;
+      --assistant-bubble: #0f0f0f;
+
+      /* Type */
+      --mono: 'JetBrains Mono', 'Fira Mono', ui-monospace, monospace;
+      --sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+      /* Layout */
+      --chat-width: 42%;
+      --canvas-width: 58%;
     }
 
     html, body {
@@ -24,44 +41,51 @@
       background: var(--bg);
       overflow: hidden;
       color-scheme: dark;
+      font-family: var(--sans);
+      font-size: 14px;
     }
 
-    canvas {
-      display: block;
-      position: fixed;
-      top: 0; left: 0;
+    /* ─── Split layout ─── */
+    #app {
+      display: grid;
+      grid-template-columns: var(--chat-width) var(--canvas-width);
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* ═══ CHAT PANEL (LEFT) ═══════════════════════════════════════════════ */
+    #chat {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      border-right: 1px solid var(--border);
       background: var(--bg);
+      overflow: hidden;
     }
 
-    /* ─── Top bar ─── */
-    #topbar {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      z-index: 20;
+    /* Chat header */
+    #chat-header {
       display: flex;
       align-items: center;
       gap: 1rem;
-      padding: 1.5rem 2rem;
-      pointer-events: none;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
     }
 
-    #topbar > * { pointer-events: auto; }
-
-    #back {
+    #chat-header a {
       font-family: var(--mono);
       font-size: 0.65rem;
       letter-spacing: 0.08em;
       color: var(--muted);
       text-decoration: none;
-      padding: 0.4rem 0.75rem;
+      padding: 0.3rem 0.6rem;
       border: 1px solid var(--border);
-      background: rgba(10,10,10,0.8);
-      backdrop-filter: blur(8px);
       transition: color 0.15s, border-color 0.15s;
     }
-    #back:hover { color: var(--text); border-color: var(--muted); }
+    #chat-header a:hover { color: var(--text); border-color: var(--muted); }
 
-    #label {
+    #chat-header .label {
       font-family: var(--mono);
       font-size: 0.6rem;
       letter-spacing: 0.1em;
@@ -69,84 +93,199 @@
       text-transform: uppercase;
     }
 
-    /* ─── Prompt input ─── */
-    #prompt-area {
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
-      z-index: 20;
-      padding: 1.5rem 2rem;
-      background: linear-gradient(to top, rgba(10,10,10,0.95) 40%, transparent);
+    /* Status strip — removed, replaced by metric cards in prompt area */
+
+    /* Message list */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
     }
+
+    #messages::-webkit-scrollbar { width: 6px; }
+    #messages::-webkit-scrollbar-track { background: transparent; }
+    #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* Messages */
+    .msg {
+      max-width: 90%;
+      padding: 0.75rem 1rem;
+      font-size: 0.82rem;
+      line-height: 1.6;
+      word-wrap: break-word;
+      animation: msgIn 0.2s ease-out;
+    }
+
+    @keyframes msgIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .msg-user {
+      align-self: flex-end;
+      background: var(--user-bubble);
+      border: 1px solid var(--border);
+      border-radius: 8px 8px 2px 8px;
+      color: var(--text);
+    }
+
+    .msg-assistant {
+      align-self: flex-start;
+      background: var(--assistant-bubble);
+      border: 1px solid var(--border);
+      border-radius: 8px 8px 8px 2px;
+      color: var(--text-secondary);
+    }
+
+    .msg-assistant.streaming::after {
+      content: '▊';
+      display: inline-block;
+      animation: blink 1s steps(2) infinite;
+      color: var(--accent);
+      margin-left: 2px;
+    }
+
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+
+    .msg-system {
+      align-self: center;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--muted);
+      padding: 0.4rem 0.8rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      letter-spacing: 0.04em;
+    }
+
+    .msg-system.error {
+      color: var(--warn);
+      border-color: var(--warn);
+    }
+
+    /* Prompt area */
+    #prompt-area {
+      padding: 1rem 1.5rem 1.5rem;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      background: var(--bg);
+    }
+
+    /* Metric cards */
+    #metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      min-width: 0;
+    }
+
+    .metric-card.span-2 {
+      grid-column: 1 / -1;
+    }
+
+    .metric-card .metric-label {
+      font-family: var(--mono);
+      font-size: 16px;
+      font-weight: 400;
+      letter-spacing: 0.04em;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .metric-card .metric-val {
+      font-family: var(--mono);
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .metric-card .metric-val.accent { color: var(--accent); }
+    .metric-card .metric-val.warn { color: var(--warn); }
 
     #prompt-form {
       display: flex;
-      gap: 0.75rem;
-      max-width: 720px;
-      margin: 0 auto;
+      gap: 0.5rem;
     }
 
     #prompt-input {
       flex: 1;
-      font-family: var(--mono);
-      font-size: 0.8rem;
+      font-family: var(--sans);
+      font-size: 0.82rem;
       color: var(--text);
-      background: rgba(17,17,17,0.9);
+      background: var(--surface);
       border: 1px solid var(--border);
-      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      padding: 0.65rem 0.85rem;
       outline: none;
       transition: border-color 0.15s;
-      backdrop-filter: blur(8px);
     }
-    #prompt-input:focus { border-color: var(--muted); }
+    #prompt-input:focus { border-color: var(--border-light); }
     #prompt-input::placeholder { color: var(--muted); }
     #prompt-input:disabled { opacity: 0.4; cursor: not-allowed; }
 
     #prompt-submit {
       font-family: var(--mono);
-      font-size: 0.65rem;
-      letter-spacing: 0.08em;
-      color: var(--accent);
-      background: rgba(17,17,17,0.9);
-      border: 1px solid var(--border);
-      padding: 0 1.5rem;
-      cursor: pointer;
-      transition: border-color 0.15s, color 0.15s;
-      backdrop-filter: blur(8px);
-    }
-    #prompt-submit:hover { border-color: var(--accent); }
-    #prompt-submit:disabled { opacity: 0.3; cursor: not-allowed; border-color: var(--border); }
-
-    /* ─── Status readout ─── */
-    #status {
-      position: fixed;
-      bottom: 5rem;
-      left: 2rem;
-      z-index: 20;
-      font-family: var(--mono);
-      font-size: 0.6rem;
+      font-size: 0.62rem;
       letter-spacing: 0.06em;
-      color: var(--muted);
-      line-height: 1.8;
-      pointer-events: none;
+      color: var(--accent);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0 1.2rem;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    #prompt-submit:hover:not(:disabled) {
+      border-color: var(--accent);
+      background: var(--surface-2);
+    }
+    #prompt-submit:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* ═══ CANVAS PANEL (RIGHT) ════════════════════════════════════════════ */
+    #canvas-area {
+      position: relative;
+      height: 100vh;
+      overflow: hidden;
     }
 
-    #status .val { color: var(--text); }
-    #status .accent { color: var(--accent); }
-    #status .warn { color: var(--warn); }
+    canvas {
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+      background: var(--bg);
+    }
 
-    /* ─── Tweakpane ─── */
+    /* Tweakpane */
     #ui {
-      position: fixed;
+      position: absolute;
       top: 1.5rem;
       right: 1.5rem;
       z-index: 10;
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-      align-items: flex-end;
     }
-
-    #panel { }
 
     .tp-dfwv {
       width: 240px !important;
@@ -155,34 +294,60 @@
 </head>
 <body>
 
-  <div id="topbar">
-    <a id="back" href="/">← felt</a>
-    <span id="label">02 — signal form</span>
-  </div>
+  <div id="app">
+    <!-- ─── CHAT PANEL ─── -->
+    <div id="chat">
+      <div id="chat-header">
+        <a href="/">← felt</a>
+        <span class="label">02 — signal form</span>
+      </div>
 
-  <div id="ui">
-    <div id="panel"></div>
-  </div>
+      <div id="messages">
+        <!-- Messages get injected here -->
+      </div>
 
-  <div id="status">
-    <div>stage: <span class="val" id="s-stage">idle</span></div>
-    <div>tokens: <span class="val" id="s-tokens">0</span></div>
-    <div>sentiment: <span class="val" id="s-sentiment">—</span></div>
-    <div>hedging: <span class="val" id="s-hedging">—</span></div>
-    <div>stop: <span class="val" id="s-stop">—</span></div>
-  </div>
+      <div id="prompt-area">
+        <div id="metrics">
+          <div class="metric-card">
+            <span class="metric-label">stage</span>
+            <span class="metric-val" id="s-stage">idle</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">tokens</span>
+            <span class="metric-val" id="s-tokens">0</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">sentiment</span>
+            <span class="metric-val" id="s-sentiment">—</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">hedging</span>
+            <span class="metric-val" id="s-hedging">—</span>
+          </div>
+          <div class="metric-card span-2">
+            <span class="metric-label">stop</span>
+            <span class="metric-val" id="s-stop">—</span>
+          </div>
+        </div>
+        <form id="prompt-form">
+          <input
+            id="prompt-input"
+            type="text"
+            placeholder="ask something..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="prompt-submit" type="submit">send</button>
+        </form>
+      </div>
+    </div>
 
-  <div id="prompt-area">
-    <form id="prompt-form">
-      <input
-        id="prompt-input"
-        type="text"
-        placeholder="ask something..."
-        autocomplete="off"
-        spellcheck="false"
-      />
-      <button id="prompt-submit" type="submit">send</button>
-    </form>
+    <!-- ─── CANVAS PANEL ─── -->
+    <div id="canvas-area">
+      <div id="ui">
+        <div id="panel"></div>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="./sketch.js"></script>

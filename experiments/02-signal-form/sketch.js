@@ -31,10 +31,10 @@ const PARAMS = {
   drag: 0.98,
 
   // Color
-  baseHue: 145,
+  baseHue: 0,        // white (idle default — saturation 0 means hue doesn't matter)
   hueRange: 30,
-  saturation: 40,
-  brightness: 85,
+  saturation: 0,     // white when 0
+  brightness: 100,   // full brightness for pure white
   trailOpacity: 18,
 
   // Signal mapping
@@ -42,7 +42,7 @@ const PARAMS = {
   smoothing: 0.05,          // how fast params ease toward target values
 
   // Interaction
-  mouseAttract: true,
+  mouseAttract: false,
   mouseRadius: 140,
   mouseForce: 0.8,
 };
@@ -85,10 +85,12 @@ const EPI = {
     separation: 1.4,
     alignment: 0.8,
     cohesion: 0.6,
-    baseHue: 145,
-    brightness: 85,
+    baseHue: 0,           // white idle
+    brightness: 100,
+    saturation: 0,        // 0 = white
     maxSpeed: 2.2,
     noiseStrength: 0.0,
+    trailOpacity: 18,
   },
 };
 
@@ -168,7 +170,10 @@ class Boid {
     this.vel.add(this.acc).mult(PARAMS.drag).limit(PARAMS.maxSpeed);
     this.pos.add(this.vel);
     this.acc.mult(0);
-    this.size = PARAMS.size * (1 + (this.p.random(-PARAMS.sizeVariance, PARAMS.sizeVariance)) * 0.05 + this.size * 0.95 - PARAMS.size);
+    // Ease this.size toward PARAMS.size with small random jitter
+    const jitter = this.p.random(-PARAMS.sizeVariance, PARAMS.sizeVariance) * 0.05;
+    const target = PARAMS.size * (1 + jitter);
+    this.size = this.size * 0.9 + target * 0.1;
     this.size = Math.max(0.5, this.size);
   }
 
@@ -206,8 +211,15 @@ const sentiment = new Sentiment();
 new p5(function (p) {
   p.setup = function () {
     p.pixelDensity(Math.min(window.devicePixelRatio, 2));
-    let cnv = p.createCanvas(p.windowWidth, p.windowHeight);
+    const container = document.getElementById('canvas-area');
+    const w = container.offsetWidth;
+    const h = container.offsetHeight;
+    let cnv = p.createCanvas(w, h);
+    cnv.parent(container);
     cnv.style('display', 'block');
+    cnv.style('position', 'absolute');
+    cnv.style('top', '0');
+    cnv.style('left', '0');
     p.colorMode(p.HSB, 360, 100, 100, 100);
     p.background(0, 0, 4);
     spawnBoids(p);
@@ -244,7 +256,10 @@ new p5(function (p) {
   };
 
   p.windowResized = function () {
-    p.resizeCanvas(p.windowWidth, p.windowHeight);
+    const container = document.getElementById('canvas-area');
+    if (container) {
+      p.resizeCanvas(container.offsetWidth, container.offsetHeight);
+    }
   };
 });
 
@@ -271,8 +286,66 @@ function easeParams() {
   PARAMS.cohesion = lerp(PARAMS.cohesion, EPI.target.cohesion, s * blend);
   PARAMS.baseHue = lerp(PARAMS.baseHue, EPI.target.baseHue, s * blend);
   PARAMS.brightness = lerp(PARAMS.brightness, EPI.target.brightness, s * blend);
+  PARAMS.saturation = lerp(PARAMS.saturation, EPI.target.saturation, s * blend);
   PARAMS.maxSpeed = lerp(PARAMS.maxSpeed, EPI.target.maxSpeed, s * blend);
   PARAMS.noiseStrength = lerp(PARAMS.noiseStrength, EPI.target.noiseStrength, s * blend);
+  PARAMS.trailOpacity = lerp(PARAMS.trailOpacity, EPI.target.trailOpacity, s * blend);
+
+  // ─── Hard state override ───
+  // Idle = white, Positive = teal-blue, Negative = red.
+  // During the 2-second transition to idle, skip the snap so the easing
+  // is visible. After that, hard-snap to idle values.
+  const sent = EPI.sentimentNormalized;
+  const NEG_THRESHOLD = -0.1;
+
+  if (EPI.stage === 'idle' && idleTransitionStart !== null) {
+    const elapsed = performance.now() - idleTransitionStart;
+    if (elapsed < IDLE_TRANSITION_DURATION) {
+      // Mid-transition — let easing happen naturally toward idle targets
+      // (don't snap, don't override)
+      return;
+    }
+    // Transition complete — clear the flag
+    idleTransitionStart = null;
+  }
+
+  if (EPI.stage === 'idle') {
+    // White, calm, minimal motion
+    PARAMS.baseHue = 0;
+    PARAMS.saturation = 0;
+    PARAMS.brightness = 100;
+    PARAMS.trailOpacity = 18;
+    PARAMS.maxSpeed = 0.4;
+    PARAMS.maxForce = 0.04;
+    PARAMS.cohesion = 0.9;
+    PARAMS.alignment = 1.0;
+    PARAMS.separation = 1.0;
+    PARAMS.noiseStrength = 0.02;
+  } else if (sent < NEG_THRESHOLD) {
+    // Negative — red, full saturation, exploded flock
+    PARAMS.baseHue = 360;
+    PARAMS.saturation = 100;
+    PARAMS.brightness = 100;
+    PARAMS.trailOpacity = 1;
+    PARAMS.separation = 4.0;       // max — pushed apart
+    PARAMS.alignment = 0;
+    PARAMS.cohesion = 0;
+    PARAMS.maxSpeed = 4.7;
+    PARAMS.maxForce = 0.170;
+    PARAMS.noiseStrength = 0.3;
+  } else {
+    // Positive / neutral — teal-blue, half intensity of negative
+    PARAMS.baseHue = 200;
+    PARAMS.saturation = 100;
+    PARAMS.brightness = 100;
+    PARAMS.trailOpacity = 9;
+    PARAMS.separation = 2.0;
+    PARAMS.alignment = 0;
+    PARAMS.cohesion = 0;
+    PARAMS.maxSpeed = 2.35;
+    PARAMS.maxForce = 0.085;
+    PARAMS.noiseStrength = 0.15;
+  }
 }
 
 function lerp(a, b, t) {
@@ -288,23 +361,51 @@ function updateEpistemicTargets() {
   const speedNorm = Math.min(speed / 30, 1.0); // normalize ~30 tokens/sec as "fast"
   EPI.target.maxSpeed = 1.2 + speedNorm * 1.8; // 1.2 (calm) → 3.0 (energized)
 
-  // ─── Sentiment → color temperature (hue) ───
-  // Positive = warmer (green/gold). Negative = cooler (blue/violet).
+  // ─── Sentiment → color, trail, separation ───
+  // Positive sentiment = calm, tight, royal blue
+  // Negative sentiment = anxious, scattered, red, max separation
   const sent = EPI.sentimentNormalized; // -1 to 1
-  EPI.target.baseHue = 145 + sent * 40; // 105 (warm gold-green) ↔ 185 (cool cyan-blue)
-  EPI.target.brightness = 75 + Math.abs(sent) * 20; // brighter when sentiment is strong either way
+  const SENTIMENT_THRESHOLD = -0.1;
 
-  // ─── Hedging density → flock cohesion/drift ───
+  // Map sentiment to separation: positive (1.0) → 1.0, negative (-1.0) → 4.0 (max)
+  // Clamp sent to range first, then lerp from 1.0 (positive) to 4.0 (negative)
+  const sentClamped = Math.max(-1, Math.min(1, sent));
+  EPI.target.separation = 1.0 + (1 - sentClamped) / 2 * 3.0; // 1.0 (positive) → 4.0 (negative)
+
+  if (sent < SENTIMENT_THRESHOLD) {
+    // Negative — red, anxious
+    EPI.target.baseHue = 0;           // red
+    EPI.target.saturation = 80;       // strong red
+    EPI.target.brightness = 90;       // bright
+    EPI.target.trailOpacity = 1;      // minimal trail — exposed, raw
+  } else {
+    // Positive/calm — royal blue palette
+    EPI.target.baseHue = 220;       // royal blue
+    EPI.target.saturation = 60;
+    EPI.target.brightness = 85;
+    EPI.target.trailOpacity = 18;
+  }
+
+  // ─── Hedging density → flock cohesion/drift (still contributes) ───
   // High hedging = flock loses cohesion, drifts apart, noise increases.
-  // Low hedging (confident) = tight, coherent flock.
   const hedge = EPI.hedgeDensity; // 0 to 1
   EPI.target.cohesion = 0.6 - hedge * 0.5;      // 0.6 (tight) → 0.1 (loose)
   EPI.target.alignment = 0.8 - hedge * 0.5;      // 0.8 (aligned) → 0.3 (drifting)
-  EPI.target.separation = 1.4 + hedge * 0.8;     // 1.4 → 2.2 (more spread when uncertain)
   EPI.target.noiseStrength = hedge * 0.4;        // 0 → 0.4 (turbulent when hedging)
 
   // ─── Stage-based overrides ───
-  if (EPI.stage === 'anticipating') {
+  if (EPI.stage === 'idle') {
+    // No input — tight, slow, calm white
+    EPI.target.maxSpeed = 0.6;
+    EPI.target.cohesion = 0.9;
+    EPI.target.alignment = 1.0;
+    EPI.target.separation = 1.0;
+    EPI.target.noiseStrength = 0.02;
+    EPI.target.baseHue = 0;           // white
+    EPI.target.saturation = 0;
+    EPI.target.brightness = 100;
+    EPI.target.trailOpacity = 18;
+  } else if (EPI.stage === 'anticipating') {
     // Stage 1: prompt sent, waiting for stream. Tense, compressed, slow breathing.
     EPI.target.maxSpeed = 0.8;
     EPI.target.cohesion = 0.9;
@@ -312,8 +413,8 @@ function updateEpistemicTargets() {
     EPI.target.separation = 1.0;
     EPI.target.noiseStrength = 0.05;
   } else if (EPI.stage === 'settling') {
-    // Stage 4: stream complete. Settle into a calm, resolved state.
-    EPI.target.maxSpeed = 1.0;
+    // Stage 4: stream complete. Show "activation" — speed up briefly.
+    EPI.target.maxSpeed = 2.5;
     EPI.target.noiseStrength = 0.0;
     // Keep cohesion/alignment at whatever the final sentiment/hedging dictated
     // but ease toward calm
@@ -381,14 +482,25 @@ function updateTokenSpeed() {
 
 const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-sonnet-4-20250514';
+const MODEL = 'claude-sonnet-4-5-20250929';
 
 async function streamPrompt(promptText) {
   if (!API_KEY) {
     console.error('No API key found. Set VITE_ANTHROPIC_API_KEY in .env');
+    addSystemMessage('No API key — set VITE_ANTHROPIC_API_KEY in .env', true);
     setStage('idle');
     return;
   }
+
+  // Cancel any pending idle-return timer from a previous response
+  if (settleTimer) {
+    clearTimeout(settleTimer);
+    settleTimer = null;
+  }
+  idleTransitionStart = null;
+
+  // Add user message to chat
+  addUserMessage(promptText);
 
   // Reset epistemic state
   EPI.text = '';
@@ -426,12 +538,17 @@ async function streamPrompt(promptText) {
     if (!response.ok) {
       const errText = await response.text();
       console.error('API error:', response.status, errText);
+      addSystemMessage('API error: ' + response.status, true);
       setStage('idle');
       return;
     }
 
     // Stage 2: Reacting — stream is open
     setStage('reacting');
+
+    // Create assistant message element for streaming
+    const assistantEl = addAssistantMessage('');
+    assistantEl.classList.add('streaming');
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -459,6 +576,9 @@ async function streamPrompt(promptText) {
             const delta = event.delta;
             if (delta && delta.type === 'text_delta' && delta.text) {
               handleTokenChunk(delta.text);
+              // Append text to the assistant message element
+              assistantEl.textContent += delta.text;
+              scrollMessagesToBottom();
             }
           } else if (event.type === 'message_start') {
             // Stream is live — transition to streaming stage
@@ -469,6 +589,7 @@ async function streamPrompt(promptText) {
             }
           } else if (event.type === 'message_stop') {
             // Stage 4: Settle
+            assistantEl.classList.remove('streaming');
             handleStreamComplete();
           }
         } catch (e) {
@@ -479,12 +600,14 @@ async function streamPrompt(promptText) {
 
     // If we never got a message_stop event, handle completion
     if (EPI.stage !== 'settling' && EPI.stage !== 'idle') {
+      assistantEl.classList.remove('streaming');
       if (!EPI.stopReason) EPI.stopReason = 'end_turn';
       handleStreamComplete();
     }
 
   } catch (err) {
     console.error('Stream error:', err);
+    addSystemMessage('Stream error: ' + err.message, true);
     setStage('idle');
   }
 }
@@ -512,6 +635,13 @@ function handleTokenChunk(text) {
   updateEpistemicTargets();
 }
 
+// ─── IDLE TIMER ─────────────────────────────────────────────────────────────
+// After stream completes, wait 4 seconds then return to idle state with a
+// 2-second eased animation (so the transition is visible, not instant).
+let settleTimer = null;
+let idleTransitionStart = null;
+const IDLE_TRANSITION_DURATION = 2000; // ms
+
 function handleStreamComplete() {
   setStage('settling');
 
@@ -525,6 +655,9 @@ function handleStreamComplete() {
 
   updateEpistemicTargets();
 
+  // Save assistant response to chat history
+  saveAssistantMessage(EPI.text);
+
   // Haptic pulse on supported devices
   if (navigator.vibrate) {
     navigator.vibrate(50);
@@ -536,6 +669,14 @@ function handleStreamComplete() {
   if (input) input.disabled = false;
   if (submit) submit.disabled = false;
   if (input) input.focus();
+
+  // After 4 seconds, return to idle state — animate transition over 2 seconds
+  if (settleTimer) clearTimeout(settleTimer);
+  settleTimer = setTimeout(() => {
+    idleTransitionStart = performance.now();
+    setStage('idle');
+    settleTimer = null;
+  }, 4000);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -571,7 +712,7 @@ function updateStatus() {
 
   // Color the stage based on state
   const stageEl = el('s-stage');
-  stageEl.className = 'val';
+  stageEl.className = 'metric-val';
   if (EPI.stage === 'anticipating') stageEl.classList.add('accent');
   else if (EPI.stage === 'streaming') stageEl.classList.add('accent');
   else if (EPI.stage === 'settling') stageEl.classList.add('warn');
@@ -588,23 +729,23 @@ const signalFolder = pane.addFolder({ title: 'Signal', expanded: true });
 signalFolder.addBinding(PARAMS, 'signalStrength', { min: 0, max: 1, step: 0.05, label: 'AI Drive' });
 signalFolder.addBinding(PARAMS, 'smoothing', { min: 0.01, max: 0.2, step: 0.01, label: 'Smoothing' });
 
-// Flocking (live values — driven by AI, but visible)
-const flockFolder = pane.addFolder({ title: 'Flocking (live)', expanded: true });
-flockFolder.addBinding(PARAMS, 'separation', { min: 0, max: 4, step: 0.05, label: 'Separation', readonly: true });
-flockFolder.addBinding(PARAMS, 'alignment', { min: 0, max: 4, step: 0.05, label: 'Alignment', readonly: true });
-flockFolder.addBinding(PARAMS, 'cohesion', { min: 0, max: 4, step: 0.05, label: 'Cohesion', readonly: true });
-flockFolder.addBinding(PARAMS, 'noiseStrength', { min: 0, max: 1, step: 0.05, label: 'Noise', readonly: true });
+// Flocking (live values — driven by AI, but you can override)
+const flockFolder = pane.addFolder({ title: 'Flocking', expanded: true });
+flockFolder.addBinding(PARAMS, 'separation', { min: 0, max: 4, step: 0.05, label: 'Separation' });
+flockFolder.addBinding(PARAMS, 'alignment', { min: 0, max: 4, step: 0.05, label: 'Alignment' });
+flockFolder.addBinding(PARAMS, 'cohesion', { min: 0, max: 4, step: 0.05, label: 'Cohesion' });
+flockFolder.addBinding(PARAMS, 'noiseStrength', { min: 0, max: 1, step: 0.05, label: 'Noise' });
 
 // Color
-const colorFolder = pane.addFolder({ title: 'Color (live)', expanded: false });
-colorFolder.addBinding(PARAMS, 'baseHue', { min: 0, max: 360, step: 1, label: 'Hue', readonly: true });
-colorFolder.addBinding(PARAMS, 'brightness', { min: 20, max: 100, step: 1, label: 'Brightness', readonly: true });
+const colorFolder = pane.addFolder({ title: 'Color', expanded: false });
+colorFolder.addBinding(PARAMS, 'baseHue', { min: 0, max: 360, step: 1, label: 'Hue' });
+colorFolder.addBinding(PARAMS, 'brightness', { min: 20, max: 100, step: 1, label: 'Brightness' });
 colorFolder.addBinding(PARAMS, 'saturation', { min: 0, max: 100, step: 1, label: 'Saturation' });
 colorFolder.addBinding(PARAMS, 'trailOpacity', { min: 1, max: 60, step: 1, label: 'Trail' });
 
 // Motion
-const motionFolder = pane.addFolder({ title: 'Motion (live)', expanded: false });
-motionFolder.addBinding(PARAMS, 'maxSpeed', { min: 0.2, max: 8, step: 0.1, label: 'Max Speed', readonly: true });
+const motionFolder = pane.addFolder({ title: 'Motion', expanded: false });
+motionFolder.addBinding(PARAMS, 'maxSpeed', { min: 0.2, max: 8, step: 0.1, label: 'Max Speed' });
 motionFolder.addBinding(PARAMS, 'maxForce', { min: 0.01, max: 0.3, step: 0.005, label: 'Max Force' });
 motionFolder.addBinding(PARAMS, 'drag', { min: 0.85, max: 1.0, step: 0.005, label: 'Drag' });
 
@@ -615,14 +756,100 @@ shapeFolder.addBinding(PARAMS, 'count', { min: 100, max: 3000, step: 50, label: 
 shapeFolder.addBinding(PARAMS, 'size', { min: 1, max: 12, step: 0.1, label: 'Size' });
 shapeFolder.addBinding(PARAMS, 'sizeVariance', { min: 0, max: 1, step: 0.05, label: 'Size Variance' });
 
-// Interaction
+// Interaction (read-only — not in scope for current testing)
 const interFolder = pane.addFolder({ title: 'Interaction', expanded: false });
-interFolder.addBinding(PARAMS, 'mouseAttract', { label: 'Mouse Attract' });
-interFolder.addBinding(PARAMS, 'mouseRadius', { min: 20, max: 400, step: 10, label: 'Mouse Radius' });
-interFolder.addBinding(PARAMS, 'mouseForce', { min: 0.1, max: 3, step: 0.1, label: 'Mouse Force' });
+interFolder.addBinding(PARAMS, 'mouseAttract', { label: 'Mouse Attract', readonly: true });
+interFolder.addBinding(PARAMS, 'mouseRadius', { min: 20, max: 400, step: 10, label: 'Mouse Radius', readonly: true });
+interFolder.addBinding(PARAMS, 'mouseForce', { min: 0.1, max: 3, step: 0.1, label: 'Mouse Force', readonly: true });
 
 // Actions
 pane.addButton({ title: 'Restart' }).on('click', () => { needsReset = true; });
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CHAT MESSAGE RENDERING + PERSISTENCE
+// ═══════════════════════════════════════════════════════════════════════════
+
+const messagesEl = document.getElementById('messages');
+const STORAGE_KEY = 'felt-chat-history';
+
+function saveMessage(type, text, error = false) {
+  const history = loadHistory();
+  history.push({ type, text, error });
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+  } catch (e) {
+    // Storage full or unavailable — silently skip
+  }
+}
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function clearHistory() {
+  localStorage.removeItem(STORAGE_KEY);
+}
+
+function renderHistory() {
+  const history = loadHistory();
+  for (const msg of history) {
+    const el = document.createElement('div');
+    if (msg.type === 'user') {
+      el.className = 'msg msg-user';
+    } else if (msg.type === 'assistant') {
+      el.className = 'msg msg-assistant';
+    } else if (msg.type === 'system') {
+      el.className = 'msg msg-system' + (msg.error ? ' error' : '');
+    }
+    el.textContent = msg.text;
+    messagesEl.appendChild(el);
+  }
+  if (history.length > 0) scrollMessagesToBottom();
+}
+
+function addUserMessage(text) {
+  const el = document.createElement('div');
+  el.className = 'msg msg-user';
+  el.textContent = text;
+  messagesEl.appendChild(el);
+  saveMessage('user', text);
+  scrollMessagesToBottom();
+}
+
+function addAssistantMessage(text) {
+  const el = document.createElement('div');
+  el.className = 'msg msg-assistant';
+  el.textContent = text;
+  messagesEl.appendChild(el);
+  scrollMessagesToBottom();
+  return el;
+}
+
+// Called when streaming completes to save the full assistant response
+function saveAssistantMessage(text) {
+  saveMessage('assistant', text);
+}
+
+function addSystemMessage(text, isError = false) {
+  const el = document.createElement('div');
+  el.className = 'msg msg-system' + (isError ? ' error' : '');
+  el.textContent = text;
+  messagesEl.appendChild(el);
+  saveMessage('system', text, isError);
+  scrollMessagesToBottom();
+}
+
+function scrollMessagesToBottom() {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// Load chat history on page load
+renderHistory();
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  PROMPT INPUT WIRING
